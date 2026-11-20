@@ -305,10 +305,54 @@ function EvidenceModal({ item, onClose }) {
   )
 }
 
-function SessionHistory() {
+function EvidenceGrid({ items, onSelect, emptyText = 'Chưa có ảnh sản phẩm bị loại nào được lưu trong phiên này.' }) {
+  return (
+    <div className="evidence-grid">
+      {items.length ? (
+        items.map(item => (
+          <figure
+            className="evidence-card"
+            key={item.name}
+            onClick={() => onSelect(item)}
+            tabIndex={0}
+            onKeyDown={e => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                onSelect(item)
+              }
+            }}
+          >
+            <div className="evidence-thumb">
+              <img src={item.explanation_url || item.url} alt="Sản phẩm bị loại" loading="lazy" />
+              <span className="evidence-tag">
+                {item.explanation_url ? 'Phân tích vùng lỗi' : 'Ảnh gốc'}
+              </span>
+            </div>
+            <figcaption>
+              <div className="evidence-title">
+                <b>Quả hỏng — Loại bỏ</b>
+              </div>
+              <span className="evidence-note">
+                {item.explanation_url ? 'Vùng đánh dấu: dấu hiệu thâm/nâu' : 'Ghi nhận tại vạch kiểm tra'}
+              </span>
+              <time className="evidence-time">
+                {new Date(item.created_at).toLocaleString('vi-VN')}
+              </time>
+            </figcaption>
+          </figure>
+        ))
+      ) : (
+        <div className="empty-box">{emptyText}</div>
+      )}
+    </div>
+  )
+}
+
+function SessionHistory({ onSelectImage }) {
   const [sessions, setSessions] = useState([])
   const [selected, setSelected] = useState(null)
   const [logs, setLogs] = useState([])
+  const [sessionRejections, setSessionRejections] = useState([])
   const [query, setQuery] = useState('')
 
   useEffect(() => {
@@ -322,9 +366,13 @@ function SessionHistory() {
 
   useEffect(() => {
     if (!selected) return
-    api(`/api/sessions/${encodeURIComponent(selected.batch_id)}/logs`)
+    const encoded = encodeURIComponent(selected.batch_id)
+    api(`/api/sessions/${encoded}/logs`)
       .then(setLogs)
       .catch(() => setLogs([]))
+    api(`/api/rejections?limit=200&batch_id=${encoded}`)
+      .then(setSessionRejections)
+      .catch(() => setSessionRejections([]))
   }, [selected])
 
   const filteredSessions = useMemo(() => {
@@ -455,7 +503,21 @@ function SessionHistory() {
                 </div>
               </div>
 
-              <div className="table-wrap">
+              <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
+                <div className="section-header" style={{ marginBottom: 12 }}>
+                  <h3>Ảnh quả hỏng bị loại · {selected.batch_id}</h3>
+                  <span className="tnum">{sessionRejections.length} ảnh đã lưu · Nhấn để phóng to</span>
+                </div>
+                <div style={{ maxHeight: 440, overflowY: 'auto', paddingRight: 4 }}>
+                  <EvidenceGrid
+                    items={sessionRejections}
+                    onSelect={onSelectImage}
+                    emptyText={`Phiên ${selected.batch_id} chưa có ảnh sản phẩm bị loại.`}
+                  />
+                </div>
+              </div>
+
+              <div className="table-wrap" style={{ maxHeight: 420, overflowY: 'auto' }}>
                 {logs.length ? (
                   <table className="data-table">
                     <thead>
@@ -522,11 +584,24 @@ export default function App() {
   const [view, setView] = useState('live')
   const [activeImage, setActiveImage] = useState(null)
 
+  const currentBatchId = stats.batch?.id || ''
+
+  const fetchRejections = batchId => {
+    if (!batchId) {
+      setRejections([])
+      return Promise.resolve()
+    }
+    return api(`/api/rejections?limit=24&batch_id=${encodeURIComponent(batchId)}`)
+      .then(setRejections)
+      .catch(() => {})
+  }
+
   const refresh = () =>
     api('/api/stats')
       .then(data => {
         setStats(data)
         setNotice('')
+        fetchRejections(data?.batch?.id || '')
       })
       .catch(error => setNotice(error.message))
 
@@ -538,11 +613,9 @@ export default function App() {
   useEffect(() => {
     refresh()
     refreshWarehouse()
-    api('/api/rejections?limit=12').then(setRejections).catch(() => {})
     const timer = setInterval(() => {
       refresh()
       refreshWarehouse()
-      api('/api/rejections?limit=12').then(setRejections).catch(() => {})
     }, 1500)
     return () => clearInterval(timer)
   }, [])
@@ -731,53 +804,27 @@ export default function App() {
 
             <section>
               <div className="section-header">
-                <h2>Ảnh bằng chứng sản phẩm bị loại</h2>
-                <span className="tnum">{rejections.length} ảnh gần nhất · Nhấn vào ảnh để phóng to</span>
+                <h2>
+                  Ảnh bằng chứng sản phẩm bị loại
+                  {currentBatchId ? ` · Phiên ${currentBatchId}` : ''}
+                </h2>
+                <span className="tnum">{rejections.length} ảnh trong phiên này · Nhấn vào ảnh để phóng to</span>
               </div>
-              <div className="evidence-grid">
-                {rejections.length ? (
-                  rejections.map(item => (
-                    <figure
-                      className="evidence-card"
-                      key={item.name}
-                      onClick={() => setActiveImage(item)}
-                      tabIndex={0}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault()
-                          setActiveImage(item)
-                        }
-                      }}
-                    >
-                      <div className="evidence-thumb">
-                        <img src={item.explanation_url || item.url} alt="Sản phẩm bị loại" loading="lazy" />
-                        <span className="evidence-tag">
-                          {item.explanation_url ? 'Phân tích vùng lỗi' : 'Ảnh gốc'}
-                        </span>
-                      </div>
-                      <figcaption>
-                        <div className="evidence-title">
-                          <b>Quả hỏng — Loại bỏ</b>
-                        </div>
-                        <span className="evidence-note">
-                          {item.explanation_url ? 'Vùng đánh dấu: dấu hiệu thâm/nâu' : 'Ghi nhận tại vạch kiểm tra'}
-                        </span>
-                        <time className="evidence-time">
-                          {new Date(item.created_at).toLocaleString('vi-VN')}
-                        </time>
-                      </figcaption>
-                    </figure>
-                  ))
-                ) : (
-                  <div className="empty-box">Chưa có ảnh sản phẩm bị loại nào được lưu.</div>
-                )}
-              </div>
+              <EvidenceGrid
+                items={rejections}
+                onSelect={setActiveImage}
+                emptyText={
+                  currentBatchId
+                    ? `Phiên ${currentBatchId} chưa có ảnh sản phẩm bị loại nào được lưu.`
+                    : 'Chưa có ảnh sản phẩm bị loại nào được lưu.'
+                }
+              />
             </section>
           </>
         ) : view === 'warehouse' ? (
           <WarehouseView data={warehouse} onUpdate={setWarehouse} />
         ) : (
-          <SessionHistory />
+          <SessionHistory onSelectImage={setActiveImage} />
         )}
       </main>
 

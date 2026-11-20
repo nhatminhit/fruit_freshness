@@ -956,6 +956,7 @@ class ConveyorApp(ctk.CTk):
 
         os.makedirs(self.rejected_dir, exist_ok=True)
         os.makedirs(self.explanations_dir, exist_ok=True)
+        safe_batch = re.sub(r"[^A-Za-z0-9-]+", "-", str(self.batch_id or "SESSION").strip()).strip("-") or "SESSION"
         h, w = roi_frame.shape[:2]
         for event in events:
             x1, y1, x2, y2 = event['bbox']
@@ -966,9 +967,8 @@ class ConveyorApp(ctk.CTk):
             crop = roi_frame[y1:y2, x1:x2]
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
             confidence = int(event.get('confidence', 0.0) * 100)
-            fruit_type = event.get('fruit_type', 'unknown')
             filename = (
-                f"loai_{fruit_type}_{timestamp}_id{event['track_id']}_conf{confidence}.jpg"
+                f"loai_batch_{safe_batch}_{timestamp}_id{event['track_id']}_conf{confidence}.jpg"
             )
             output_path = os.path.join(self.rejected_dir, filename)
             if not cv2.imwrite(output_path, crop):
@@ -1111,9 +1111,7 @@ class ConveyorApp(ctk.CTk):
             good = self.bbox_tracker.count_fresh
             rejected = self.bbox_tracker.count_rotten
             events = list(self.bbox_tracker.recent_events[-8:])
-            fruit_breakdown = {
-                k: dict(v) for k, v in self.bbox_tracker.counts_by_fruit.items()
-            }
+            fruit_breakdown = {"fruit": dict(self.bbox_tracker.counts_by_fruit["fruit"])}
             event_records = list(self.bbox_tracker.recent_event_records)
         elif self.controller:
             total = self.controller.total_processed

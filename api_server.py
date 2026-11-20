@@ -1,6 +1,7 @@
 """Read-only FastAPI dashboard for logs produced by the desktop GUI."""
 
 import json
+import re
 import time
 import csv
 import io
@@ -234,24 +235,60 @@ def session_report(batch_id: str):
     return FileResponse(report_path, media_type="text/html; charset=utf-8")
 
 
+_BATCH_IMG_RE = re.compile(r"^loai_batch_([A-Za-z0-9-]+)_\d{8}_\d{6}")
+
+
+def _session_time_windows():
+    windows = []
+    for session in summarize_sessions():
+        try:
+            start = datetime.fromisoformat(session["started_at"]).timestamp() if session.get("started_at") else None
+            end = datetime.fromisoformat(session["ended_at"]).timestamp() if session.get("ended_at") else None
+        except ValueError:
+            continue
+        if start is not None and end is not None:
+            windows.append((session["batch_id"], start - 5.0, end + 15.0))
+    return windows
+
+
+def _infer_rejection_batch_id(item: Path, mtime: float, windows):
+    match = _BATCH_IMG_RE.match(item.stem)
+    if match:
+        return match.group(1)
+    for batch_id, start_ts, end_ts in windows:
+        if start_ts <= mtime <= end_ts:
+            return batch_id
+    return None
+
+
 @app.get("/api/rejections")
-def rejections(limit: int = 24):
+def rejections(limit: int = 24, batch_id: str | None = None):
     REJECTED_DIR.mkdir(parents=True, exist_ok=True)
     files = sorted(REJECTED_DIR.glob("*.jpg"), key=lambda item: item.stat().st_mtime, reverse=True)
+    windows = _session_time_windows()
+    target_batch = (batch_id or "").strip() or None
+    max_items = max(1, min(limit, 500))
     results = []
-    for item in files[:max(1, min(limit, 100))]:
-        parts = item.stem.split("_")
-        fruit_type = parts[1] if len(parts) > 2 and parts[1] in {"apple", "banana", "orange"} else "unknown"
+    for item in files:
+        mtime = item.stat().st_mtime
+        img_batch = _infer_rejection_batch_id(item, mtime, windows)
+        if target_batch is not None and img_batch != target_batch:
+            continue
+        explanation_file = item.name.replace("loai_", "giai_thich_", 1)
         results.append({
-            "name": item.name, "url": f"/evidence/{item.name}",
-            "fruit_type": fruit_type,
+            "name": item.name,
+            "url": f"/evidence/{item.name}",
+            "batch_id": img_batch,
+            "fruit_type": "fruit",
             "explanation_url": (
-                f"/explanations/{item.name.replace('loai_', 'giai_thich_', 1)}"
-                if (EXPLANATIONS_DIR / item.name.replace('loai_', 'giai_thich_', 1)).exists()
+                f"/explanations/{explanation_file}"
+                if (EXPLANATIONS_DIR / explanation_file).exists()
                 else None
             ),
-            "created_at": datetime.fromtimestamp(item.stat().st_mtime).isoformat(),
+            "created_at": datetime.fromtimestamp(mtime).isoformat(),
         })
+        if len(results) >= max_items:
+            break
     return results
 
 

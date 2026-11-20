@@ -20,13 +20,6 @@ except Exception:
 
 
 class FruitTracker2Stage:
-    FRUIT_DISPLAY_MAP = {
-        "apple": "TAO",
-        "orange": "CAM",
-        "banana": "CHUOI",
-        "fruit": "QUA",
-    }
-
     def __init__(
         self,
         cls_model_path="best.pt",
@@ -66,19 +59,14 @@ class FruitTracker2Stage:
         self.tracks = {}
         self.max_lost_frames = 12
 
-        # Thống kê đếm sản lượng
+        # Thống kê đếm sản lượng (chỉ phân loại Quả Lành / Quả Hỏng)
         self.count_fresh = 0
         self.count_rotten = 0
         self.total_counted = 0
         self.recent_events = []
         self.pending_rejections = []
         self.recent_event_records = []
-        self.counts_by_fruit = {
-            "fruit": {"good": 0, "rejected": 0},
-            "apple": {"good": 0, "rejected": 0},
-            "orange": {"good": 0, "rejected": 0},
-            "banana": {"good": 0, "rejected": 0},
-        }
+        self.counts_by_fruit = {"fruit": {"good": 0, "rejected": 0}}
 
     # ------------------------------------------------------------------
     # Helpers dùng chung
@@ -520,14 +508,10 @@ class FruitTracker2Stage:
         if (prev_x <= line_x <= curr_x) or (prev_x >= line_x >= curr_x):
             track_data["counted"] = True
             self.total_counted += 1
-            fruit_type = track_data.get("fruit_type", "fruit") or "fruit"
-            fruit_display = self.FRUIT_DISPLAY_MAP.get(fruit_type, "QUA")
+            fruit_type = "fruit"
+            fruit_display = "QUA"
             quality = "good" if track_data["is_fresh"] else "rejected"
-
             self.counts_by_fruit["fruit"][quality] += 1
-            if fruit_type != "fruit":
-                self.counts_by_fruit.setdefault(fruit_type, {"good": 0, "rejected": 0})
-                self.counts_by_fruit[fruit_type][quality] += 1
 
             if track_data["is_fresh"]:
                 self.count_fresh += 1
@@ -579,13 +563,7 @@ class FruitTracker2Stage:
 
             x1, y1, x2, y2 = track_data["bbox"]
             is_fresh = track_data["is_fresh"]
-            fruit_name = self.FRUIT_DISPLAY_MAP.get(track_data.get("fruit_type", "fruit"), "QUA")
-            conf_pct = int(round(float(track_data.get("conf", 0.0)) * 100))
-            label_text = (
-                f"#{track_id} {fruit_name} {'LANH' if is_fresh else 'HONG'} {conf_pct}%"
-                if self.is_single_stage
-                else f"#{track_id} {'LANH' if is_fresh else 'HONG'}"
-            )
+            label_text = f"#{track_id} {'LANH' if is_fresh else 'HONG'}"
 
             box_color = (0, 255, 60) if is_fresh else (20, 30, 255)
             cv2.rectangle(out, (x1, y1), (x2, y2), box_color, 2)
